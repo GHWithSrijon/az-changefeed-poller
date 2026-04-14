@@ -1,0 +1,5 @@
+azure-identity>=1.16.0
+azure-storage-blob>=12.19.0
+azure-storage-blob-changefeed>=12.0.0b2
+boto3>=1.34.0
+tenacity>=8.2.0
