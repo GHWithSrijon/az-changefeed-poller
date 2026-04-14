@@ -1,0 +1,30 @@
+# ── Sensitive / environment ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Cursor cache (contains continuation tokens) ───────────────────────────────
+*.changefeed_cursor.json
+.changefeed_cursor.json
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environment ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── uv ────────────────────────────────────────────────────────────────────────
+.python-version
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
