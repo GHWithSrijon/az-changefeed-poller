@@ -58,7 +58,7 @@ def poll_once(azure_client, sqs_client, continuation_token: str | None) -> str |
                 logger.debug("Skipping non-BlobCreated event: %s", event_type)
                 continue
 
-            sqs_event = aws_service.build_s3_create_event(event, AZURE_ACCOUNT_NAME)
+            sqs_event = aws_service.build_blob_created_event(event, AZURE_ACCOUNT_NAME)
             try:
                 aws_service.send_event(sqs_client, sqs_event)
                 total_forwarded += 1

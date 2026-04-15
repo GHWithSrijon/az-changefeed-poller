@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from datetime import datetime, timezone
 
 from config import CURSOR_FILE
 
@@ -59,6 +60,14 @@ def save_failure(continuation_token: str | None) -> None:
 def _write(continuation_token: str | None, status: str) -> None:
     try:
         with open(CURSOR_FILE, "w") as f:
-            json.dump({"continuation_token": continuation_token, "status": status}, f, indent=2)
+            json.dump(
+                {
+                    "continuation_token": continuation_token,
+                    "status": status,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                f,
+                indent=2,
+            )
     except OSError as exc:
         logger.error("Failed to write cursor to %s: %s", CURSOR_FILE, exc)

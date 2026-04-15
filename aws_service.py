@@ -12,7 +12,8 @@ from tenacity import (
     wait_exponential,
 )
 
-from config import AWS_REGION, SQS_QUEUE_URL , LOCALSTACK_ENDPOINT
+from config import AWS_REGION, LOCALSTACK_ENDPOINT, SQS_QUEUE_URL
+from schema import AzureBlob, AzureContainer, AzureMetadata, SQSMessage, SQSRecord
 
 logger = logging.getLogger("az-changefeed-poller.aws")
 
@@ -39,50 +40,38 @@ def build_client():
     return boto3.client("sqs", region_name=AWS_REGION)
 
 
-def build_s3_create_event(record: dict, account_name: str) -> dict:
-    """Map an Azure BlobCreated change feed record to an S3-compatible event envelope."""
-    event_time = record.get("eventTime") or datetime.now(timezone.utc).isoformat()
+def build_blob_created_event(record: dict, account_name: str) -> dict:
+    """Map an Azure BlobCreated change feed record to an SQSMessage and return as dict."""
     subject = record.get("subject", "")
-
-    # subject: /blobServices/default/containers/<container>/blobs/<blob>
     blob_name = subject.split("/blobs/", 1)[-1] if "/blobs/" in subject else subject
     container_name = (
         subject.split("/containers/", 1)[1].split("/blobs/")[0]
         if "/containers/" in subject
         else ""
     )
-
     data = record.get("data", {})
 
-    return {
-        "Records": [
-            {
-                "eventVersion": "2.1",
-                "eventSource": "azure:blob",
-                "eventTime": event_time,
-                "eventName": "ObjectCreated:Put",
-                "s3": {
-                    "s3SchemaVersion": "1.0",
-                    "bucket": {
-                        "name": f"{account_name}-{container_name}",
-                        "arn": f"arn:aws:s3:::{account_name}-{container_name}",
-                    },
-                    "object": {
-                        "key": blob_name,
-                        "size": data.get("contentLength", 0),
-                        "eTag": data.get("eTag", "").strip('"'),
-                    },
-                },
-                "_azure": {
-                    "accountName": account_name,
-                    "containerName": container_name,
-                    "blobName": blob_name,
-                    "originalEventType": record.get("eventType", ""),
-                    "originalSubject": subject,
-                },
-            }
+    message = SQSMessage(
+        records=[
+            SQSRecord(
+                event_time=record.get("eventTime") or datetime.now(timezone.utc).isoformat(),
+                storage=AzureContainer(
+                    name=container_name,
+                    account_name=account_name,
+                    blob=AzureBlob(
+                        name=blob_name,
+                        size=data.get("contentLength", 0),
+                        e_tag=data.get("eTag", "").strip('"'),
+                    ),
+                ),
+                metadata=AzureMetadata(
+                    original_event_type=record.get("eventType", ""),
+                    original_subject=subject,
+                ),
+            )
         ]
-    }
+    )
+    return message.to_dict()
 
 
 @_retry
@@ -97,5 +86,5 @@ def send_event(sqs_client, event: dict) -> None:
         QueueUrl=SQS_QUEUE_URL,
         MessageBody=json.dumps(event),
     )
-    blob_key = event["Records"][0]["s3"]["object"]["key"]
+    blob_key = event["Records"][0]["storage"]["blob"]["name"]
     logger.info("SQS message sent [MessageId=%s] for blob: %s", response["MessageId"], blob_key)
