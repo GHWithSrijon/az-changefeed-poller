@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -12,7 +13,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from config import AWS_REGION, LOCALSTACK_ENDPOINT, SQS_QUEUE_URL
+from config import AWS_REGION, AZURE_STORAGE_ACCOUNT_URL, LOCALSTACK_ENDPOINT, SQS_QUEUE_URL
 from schema import AzureBlob, AzureContainer, AzureMetadata, SQSMessage, SQSRecord
 
 logger = logging.getLogger("az-changefeed-poller.aws")
@@ -50,10 +51,12 @@ def build_blob_created_event(record: dict, account_name: str) -> dict:
         else ""
     )
     data = record.get("data", {})
+    event_id = hashlib.sha256(subject.encode()).hexdigest()
 
     message = SQSMessage(
         records=[
             SQSRecord(
+                id=event_id,
                 event_time=record.get("eventTime") or datetime.now(timezone.utc).isoformat(),
                 storage=AzureContainer(
                     name=container_name,
@@ -62,6 +65,7 @@ def build_blob_created_event(record: dict, account_name: str) -> dict:
                         name=blob_name,
                         size=data.get("contentLength", 0),
                         e_tag=data.get("eTag", "").strip('"'),
+                        url=data.get("url", ""),
                     ),
                 ),
                 metadata=AzureMetadata(

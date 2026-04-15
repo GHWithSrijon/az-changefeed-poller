@@ -1,0 +1,145 @@
+#!/usr/local/bin/bash
+# -----------------------------------------------------------------------------
+# setup_dev.sh.example
+#
+# Copy this file to setup_dev.sh and fill in the Azure credentials before use.
+#
+# Prepares the local development environment:
+#   1. Ensures az login is active and reads Azure variables via az CLI
+#   2. Starts LocalStack if not already running
+#   3. Creates the SQS test queue if it doesn't exist
+#   4. Writes all resolved values into .env
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+# ── Colours ──────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+
+info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
+success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
+error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+die()     { error "$*"; exit 1; }
+
+# ── Config ────────────────────────────────────────────────────────────────────
+ENV_FILE="${ENV_FILE:-.env}"
+SQS_QUEUE_NAME="${SQS_QUEUE_NAME:-my-queue}"
+LOCALSTACK_ENDPOINT="${LOCALSTACK_ENDPOINT:-http://localhost:4566}"
+LOCALSTACK_START_TIMEOUT=30   # seconds to wait for LocalStack to become ready
+POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-60}"
+CURSOR_FILE="${CURSOR_FILE:-.changefeed_cursor.json}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+AZURE_TENANT_ID=<your-tenant-id>
+AZURE_CLIENT_ID=<your-client-id>
+AZURE_CLIENT_SECRET=<your-client-secret>
+AZURE_STORAGE_ACCOUNT_URL=https://<your-storage-account>.blob.core.windows.net
+
+echo ""
+echo -e "${BOLD}━━━  Azure Change Feed Poller — Dev Setup  ━━━${RESET}"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Azure — verify az login
+# ─────────────────────────────────────────────────────────────────────────────
+info "Checking Azure CLI login status..."
+
+if ! az account show &>/dev/null; then
+    warn "You are not logged in to the Azure CLI."
+    echo ""
+    echo -e "  Run ${BOLD}az login${RESET} and then re-run this script."
+    echo ""
+    exit 1
+fi
+
+success "Azure CLI is authenticated."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. LocalStack — start if not running
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+info "Checking LocalStack status..."
+
+LOCALSTACK_RUNNING=false
+if localstack status 2>&1 | grep -q "running"; then
+    LOCALSTACK_RUNNING=true
+    success "LocalStack is already running."
+else
+    info "LocalStack is not running — starting it now..."
+    localstack start -d
+
+    info "Waiting for LocalStack to become ready (timeout: ${LOCALSTACK_START_TIMEOUT}s)..."
+    ELAPSED=0
+    until localstack status 2>&1 | grep -q "running"; do
+        sleep 2
+        ELAPSED=$((ELAPSED + 2))
+        if [[ $ELAPSED -ge $LOCALSTACK_START_TIMEOUT ]]; then
+            die "LocalStack did not start within ${LOCALSTACK_START_TIMEOUT}s. Run 'localstack logs' for details."
+        fi
+    done
+    success "LocalStack started."
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. SQS queue — create if it doesn't exist
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+info "Checking SQS queue '${SQS_QUEUE_NAME}' on LocalStack..."
+
+EXISTING_QUEUE_URL=$(awslocal sqs get-queue-url \
+    --queue-name "$SQS_QUEUE_NAME" \
+    --query "QueueUrl" \
+    -o text 2>/dev/null || true)
+
+if [[ -n "$EXISTING_QUEUE_URL" && "$EXISTING_QUEUE_URL" != "None" ]]; then
+    SQS_QUEUE_URL="$EXISTING_QUEUE_URL"
+    success "Queue already exists: ${SQS_QUEUE_URL}"
+else
+    info "Queue not found — creating '${SQS_QUEUE_NAME}'..."
+    SQS_QUEUE_URL=$(awslocal sqs create-queue \
+        --queue-name "$SQS_QUEUE_NAME" \
+        --output text)
+    success "Queue created: ${SQS_QUEUE_URL}"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Write .env
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+info "Writing ${ENV_FILE}..."
+
+cat > "$ENV_FILE" <<EOF
+# Azure Storage  (resolved via az CLI on $(date -u +"%Y-%m-%dT%H:%M:%SZ"))
+AZURE_TENANT_ID=${AZURE_TENANT_ID}
+AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+AZURE_STORAGE_ACCOUNT_URL=${AZURE_STORAGE_ACCOUNT_URL}
+
+# AWS / LocalStack
+AWS_REGION=${AWS_REGION}
+LOCALSTACK_ENDPOINT=${LOCALSTACK_ENDPOINT}
+SQS_QUEUE_URL=${SQS_QUEUE_URL}
+
+# Poller settings
+CURSOR_FILE=${CURSOR_FILE}
+POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS}
+EOF
+
+success "${ENV_FILE} written."
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}━━━  Setup complete  ━━━${RESET}"
+echo ""
+echo -e "  ${CYAN}AZURE_TENANT_ID${RESET}             ${AZURE_TENANT_ID}"
+echo -e "  ${CYAN}AZURE_CLIENT_ID${RESET}             ${AZURE_CLIENT_ID}"
+echo -e "  ${CYAN}AZURE_CLIENT_SECRET${RESET}         <redacted>"
+echo -e "  ${CYAN}AZURE_STORAGE_ACCOUNT_URL${RESET}   ${AZURE_STORAGE_ACCOUNT_URL}"
+echo -e "  ${CYAN}SQS_QUEUE_URL${RESET}               ${SQS_QUEUE_URL}"
+echo -e "  ${CYAN}LOCALSTACK_ENDPOINT${RESET}         ${LOCALSTACK_ENDPOINT}"
+echo ""
+echo -e "  Run the poller with:"
+echo -e "    ${BOLD}uv run main.py${RESET}"
+echo ""

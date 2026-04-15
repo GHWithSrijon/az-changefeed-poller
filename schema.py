@@ -7,6 +7,7 @@ class AzureBlob:
     name: str
     size: int
     e_tag: str
+    url: str
 
 
 @dataclass
@@ -23,6 +24,7 @@ class AzureContainer:
                 "name": self.blob.name,
                 "size": self.blob.size,
                 "eTag": self.blob.e_tag,
+                "url": self.blob.url,
             },
         }
 
@@ -41,6 +43,7 @@ class AzureMetadata:
 
 @dataclass
 class SQSRecord:
+    id: str
     event_version: str = "2.1"
     event_source: str = "azure:blob"
     event_name: str = "BlobCreated"
@@ -52,6 +55,7 @@ class SQSRecord:
 
     def to_dict(self) -> dict:
         return {
+            "id": self.id,
             "eventVersion": self.event_version,
             "eventSource": self.event_source,
             "eventName": self.event_name,
