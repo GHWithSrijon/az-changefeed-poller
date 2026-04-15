@@ -1,7 +1,6 @@
 # ── Sensitive / environment ───────────────────────────────────────────────────
 .env
 .env.*
-setup_dev.sh
 !.env.example
 
 # ── Cursor cache (contains continuation tokens) ───────────────────────────────

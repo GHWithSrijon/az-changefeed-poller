@@ -15,7 +15,7 @@ az-changefeed-poller/
 ├── schema.py          # SQS message dataclass schema
 ├── cursor.py          # File-based continuation token cache
 ├── config.py          # Environment variable configuration
-└── setup_dev.sh       # Dev environment setup (LocalStack + Azure CLI)
+└── setup_dev.sh       # Dev environment setup — loads .env, starts LocalStack, creates SQS queue
 ```
 
 ---
@@ -41,19 +41,13 @@ cd az-changefeed-poller
 # 2. Install dependencies
 uv sync
 
-# 3. Copy the example setup script
-cp setup_dev.sh.example setup_dev.sh
+# 3. Copy .env.example and fill in your Azure credentials and settings
+cp .env.example .env
 
-# 4. Fill in your Azure credentials in setup_dev.sh
-#   AZURE_TENANT_ID=<your-tenant-id>
-#   AZURE_CLIENT_ID=<your-client-id>
-#   AZURE_CLIENT_SECRET=<your-client-secret>
-#   AZURE_STORAGE_ACCOUNT_URL=https://<your-storage-account>.blob.core.windows.net
-
-# 5. Run the setup script — starts LocalStack, creates the SQS queue, and writes .env
+# 4. Run the setup script — loads .env, starts LocalStack, creates the SQS queue
 ./setup_dev.sh
 
-# 6. Start the service
+# 5. Start the service
 uv run main.py
 ```
 
@@ -119,8 +113,13 @@ Copy `.env.example` to `.env` and fill in values, or run `setup_dev.sh` to popul
 | `AWS_REGION`                | no       | `us-east-1`                  | AWS region for SQS                               |
 | `SQS_QUEUE_URL`             | yes      | —                            | Full SQS queue URL                               |
 | `LOCALSTACK_ENDPOINT`       | no       | `""`                         | Set to `http://localhost:4566` for local dev     |
-| `CURSOR_FILE`               | no       | `.changefeed_cursor.json`    | Path to the local cursor cache file              |
 | `POLL_INTERVAL_SECONDS`     | no       | `60`                         | Seconds to sleep between poll cycles             |
+| `CURSOR_STORAGE`            | no       | `local`                      | Cursor backend: `local` or `s3`                  |
+| `CURSOR_FILE`               | no       | `.changefeed_cursor.json`    | Path to cursor file (when `CURSOR_STORAGE=local`)|
+| `CURSOR_S3_BUCKET`          | no*      | —                            | S3 bucket for cursor (when `CURSOR_STORAGE=s3`)  |
+| `CURSOR_S3_KEY`             | no       | `changefeed_cursor.json`     | S3 object key for cursor file                    |
+
+> \* Required when `CURSOR_STORAGE=s3`
 
 ---
 

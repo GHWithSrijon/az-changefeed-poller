@@ -18,3 +18,8 @@ LOCALSTACK_ENDPOINT = os.environ.get("LOCALSTACK_ENDPOINT", "")
 
 CURSOR_FILE = os.environ.get("CURSOR_FILE", ".changefeed_cursor.json")
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "60"))
+
+# Cursor storage backend: "local" (default) or "s3"
+CURSOR_STORAGE = os.environ.get("CURSOR_STORAGE", "local")
+CURSOR_S3_BUCKET = os.environ.get("CURSOR_S3_BUCKET", "")
+CURSOR_S3_KEY = os.environ.get("CURSOR_S3_KEY", "changefeed_cursor.json")

@@ -1,14 +1,12 @@
 #!/usr/local/bin/bash
 # -----------------------------------------------------------------------------
-# setup_dev.sh.example
-#
-# Copy this file to setup_dev.sh and fill in the Azure credentials before use.
+# setup_dev.sh
 #
 # Prepares the local development environment:
-#   1. Ensures az login is active and reads Azure variables via az CLI
-#   2. Starts LocalStack if not already running
-#   3. Creates the SQS test queue if it doesn't exist
-#   4. Writes all resolved values into .env
+#   1. Loads .env
+#   2. Ensures az login is active
+#   3. Starts LocalStack if not already running
+#   4. Creates the SQS test queue if it doesn't exist
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -24,17 +22,20 @@ error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 die()     { error "$*"; exit 1; }
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ENV_FILE="${ENV_FILE:-.env}"
 SQS_QUEUE_NAME="${SQS_QUEUE_NAME:-my-queue}"
-LOCALSTACK_ENDPOINT="${LOCALSTACK_ENDPOINT:-http://localhost:4566}"
-LOCALSTACK_START_TIMEOUT=30   # seconds to wait for LocalStack to become ready
-POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-60}"
-CURSOR_FILE="${CURSOR_FILE:-.changefeed_cursor.json}"
-AWS_REGION="${AWS_REGION:-us-east-1}"
-AZURE_TENANT_ID=<your-tenant-id>
-AZURE_CLIENT_ID=<your-client-id>
-AZURE_CLIENT_SECRET=<your-client-secret>
-AZURE_STORAGE_ACCOUNT_URL=https://<your-storage-account>.blob.core.windows.net
+
+# ── Load .env ────────────────────────────────────────────────────────────────
+ENV_FILE=".env"
+if [[ -f "$ENV_FILE" ]]; then
+    set -o allexport
+    # shellcheck source=.env
+    source "$ENV_FILE"
+    set +o allexport
+    info "Loaded ${ENV_FILE}"
+else
+    warn ".env not found — copy .env.example to .env and fill in your credentials."
+    exit 1
+fi
 
 echo ""
 echo -e "${BOLD}━━━  Azure Change Feed Poller — Dev Setup  ━━━${RESET}"
@@ -57,7 +58,7 @@ success "Azure CLI is authenticated."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. LocalStack — start if not running
+# 1. LocalStack — start if not running
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 info "Checking LocalStack status..."
@@ -83,7 +84,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. SQS queue — create if it doesn't exist
+# 2. SQS queue — create if it doesn't exist
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 info "Checking SQS queue '${SQS_QUEUE_NAME}' on LocalStack..."
@@ -105,40 +106,33 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Write .env
+# 3. S3 cursor bucket — create if CURSOR_STORAGE=s3 and bucket doesn't exist
 # ─────────────────────────────────────────────────────────────────────────────
-echo ""
-info "Writing ${ENV_FILE}..."
+if [[ "${CURSOR_STORAGE:-local}" == "s3" ]]; then
+    echo ""
+    info "CURSOR_STORAGE=s3 — checking S3 bucket '${CURSOR_S3_BUCKET}'..."
 
-cat > "$ENV_FILE" <<EOF
-# Azure Storage  (resolved via az CLI on $(date -u +"%Y-%m-%dT%H:%M:%SZ"))
-AZURE_TENANT_ID=${AZURE_TENANT_ID}
-AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
-AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
-AZURE_STORAGE_ACCOUNT_URL=${AZURE_STORAGE_ACCOUNT_URL}
+    [[ -n "${CURSOR_S3_BUCKET:-}" ]] || die "CURSOR_S3_BUCKET must be set in .env when CURSOR_STORAGE=s3"
 
-# AWS / LocalStack
-AWS_REGION=${AWS_REGION}
-LOCALSTACK_ENDPOINT=${LOCALSTACK_ENDPOINT}
-SQS_QUEUE_URL=${SQS_QUEUE_URL}
-
-# Poller settings
-CURSOR_FILE=${CURSOR_FILE}
-POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS}
-EOF
-
-success "${ENV_FILE} written."
+    if awslocal s3api head-bucket --bucket "$CURSOR_S3_BUCKET" &>/dev/null; then
+        success "Bucket already exists: ${CURSOR_S3_BUCKET}"
+    else
+        info "Bucket not found — creating '${CURSOR_S3_BUCKET}'..."
+        awslocal s3api create-bucket --bucket "$CURSOR_S3_BUCKET"
+        success "Bucket created: ${CURSOR_S3_BUCKET}"
+    fi
+else
+    info "CURSOR_STORAGE=local — skipping S3 bucket creation."
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}━━━  Setup complete  ━━━${RESET}"
 echo ""
-echo -e "  ${CYAN}AZURE_TENANT_ID${RESET}             ${AZURE_TENANT_ID}"
-echo -e "  ${CYAN}AZURE_CLIENT_ID${RESET}             ${AZURE_CLIENT_ID}"
-echo -e "  ${CYAN}AZURE_CLIENT_SECRET${RESET}         <redacted>"
-echo -e "  ${CYAN}AZURE_STORAGE_ACCOUNT_URL${RESET}   ${AZURE_STORAGE_ACCOUNT_URL}"
-echo -e "  ${CYAN}SQS_QUEUE_URL${RESET}               ${SQS_QUEUE_URL}"
-echo -e "  ${CYAN}LOCALSTACK_ENDPOINT${RESET}         ${LOCALSTACK_ENDPOINT}"
+echo -e "  ${CYAN}SQS_QUEUE_URL${RESET}   ${SQS_QUEUE_URL}"
+if [[ "${CURSOR_STORAGE:-local}" == "s3" ]]; then
+    echo -e "  ${CYAN}CURSOR_S3_BUCKET${RESET}  ${CURSOR_S3_BUCKET}"
+fi
 echo ""
 echo -e "  Run the poller with:"
 echo -e "    ${BOLD}uv run main.py${RESET}"
