@@ -28,7 +28,6 @@ az-changefeed-poller/
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv)
-- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) — authenticated via `az login`
 - [LocalStack](https://github.com/localstack/localstack)
 - [awslocal](https://github.com/localstack/awscli-local) CLI wrapper
 

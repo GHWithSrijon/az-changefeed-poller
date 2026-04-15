@@ -4,9 +4,9 @@
 #
 # Prepares the local development environment:
 #   1. Loads .env
-#   2. Ensures az login is active
-#   3. Starts LocalStack if not already running
-#   4. Creates the SQS test queue if it doesn't exist
+#   2. Starts LocalStack if not already running
+#   3. Creates the SQS test queue if it doesn't exist
+#   4. Creates the S3 cursor bucket if CURSOR_STORAGE=s3
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -40,22 +40,6 @@ fi
 echo ""
 echo -e "${BOLD}━━━  Azure Change Feed Poller — Dev Setup  ━━━${RESET}"
 echo ""
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Azure — verify az login
-# ─────────────────────────────────────────────────────────────────────────────
-info "Checking Azure CLI login status..."
-
-if ! az account show &>/dev/null; then
-    warn "You are not logged in to the Azure CLI."
-    echo ""
-    echo -e "  Run ${BOLD}az login${RESET} and then re-run this script."
-    echo ""
-    exit 1
-fi
-
-success "Azure CLI is authenticated."
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. LocalStack — start if not running
